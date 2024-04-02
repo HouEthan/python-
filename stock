@@ -1,0 +1,77 @@
+from bs4 import BeautifulSoup as bs
+import requests
+import pandas as pd
+
+def get_ptt_post(url, N):
+    all_posts = []
+    prefix = "https://www.ptt.cc"
+    for _ in range(N):
+        res = requests.get(url)
+        soup = bs(res.text,"lxml")
+
+        data = soup.select("div.r-ent")
+        for i in data:
+            try:
+                # 標題
+                title = i.select("div.title")[0].text.strip()
+                # 篩選標題
+                if "[公告]" in title or ("已被" in title and "刪除" in title):
+                    continue
+                
+                # 日期
+                date = i.select("div.date")[0].text.strip()
+                # 作者
+                author = i.select("div.author")[0].text.strip()
+                # 網址
+                link = prefix + i.select("div.title a")[0]["href"]
+                
+                # 爬取內文和推噓文數
+                content, nice, booo, arrow = get_content_and_comments(link)
+                
+                all_posts.append({
+                    "標題": title,
+                    "發文時間": date,
+                    "作者": author,
+                    "網址": link,
+                    "總推文數": nice,
+                    "總噓文數": booo,
+                    "總箭頭數": arrow,
+                    "內文": content
+                })
+            except Exception as e:
+                print(f"Error processing post: {e}")
+                continue
+
+        # 找到上一頁的連結
+        prev_link = soup.select("div#action-bar-container div.action-bar div.btn-group-paging a")[1]["href"]
+        url = prefix + prev_link
+
+    return all_posts
+
+def get_content_and_comments(link):
+    res = requests.get(link)
+    soup = bs(res.text,"lxml")
+    
+    # 內文
+    content_section = soup.find(id="main-content")
+    content_text = content_section.text.split("※ 發信站:")[0] if content_section else ""
+    
+    # 推噓箭頭數
+    score_section = soup.find("div", class_="score")
+    nice = score_section.find("span", class_="hl push-tag").text if score_section else "0"
+    booo = score_section.find("span", class_="f1 hl push-tag").text if score_section else "0"
+    arrow = "0"  
+    return content_text, nice, booo, arrow
+
+# 主程序
+if __name__ == "__main__":
+    # 目標網址和頁數
+    target_url = "https://www.ptt.cc/bbs/Stock/index.html"
+    pages_to_crawl = 99 # 調整為需要的頁數
+
+    posts_data = get_ptt_post(target_url, pages_to_crawl)
+    
+    # 轉換為DataFrame並輸出到Excel
+    df = pd.DataFrame(posts_data)
+    df.to_excel('ptt_stock_articles.xlsx', index=False)
+    print("爬蟲結果已儲存到 'ptt_stock_articles.xlsx'")
